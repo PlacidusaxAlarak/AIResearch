@@ -1,0 +1,129 @@
+# Minimal public example for the AIResearch CLI
+
+# Paths / state
+state_dir: "state"
+output_root: "output"
+# Deprecated: kept for backward compatibility only, ignored because history sent-paper dedupe is disabled.
+seen_cache_path: "state/seen_papers.json"
+
+# Notification
+email_recipients:
+  - "you@example.com"
+email_subject_prefix: "[AIResearch] "
+email_account_name: "default"
+email_backend: "mcp"
+
+# Optional integrations
+obsidian_vault: "/path/to/your/ObsidianVault"
+obsidian_note_dir: "papers"
+
+# Frontier preference window
+frontier_year_start: 2024
+frontier_year_end: 2026
+
+# Discovery
+days_back: 7
+arxiv_query_max_terms: 8
+arxiv_max_results_per_query: 50
+hf_trending_limit: 50
+hf_date_field: "submitted_on_daily"
+
+# Stage1 prefilter
+stage1_prefilter_enabled: true
+stage1_top_n: 40
+stage1_min_score: 0.8
+stage1_fallback_top_k: 12
+whitelist_bonus: 0.5
+
+# Candidate scoring
+codex_candidate_score_threshold: 3.6
+candidate_relevance_min: 3.2
+candidate_evidence_min: 2.8
+candidate_score_weights:
+  relevance_score: 1.4
+  novelty_score: 1.1
+  evidence_score: 1.3
+  reproducibility_score: 1.0
+  clarity_score: 0.7
+  impact_score: 0.9
+
+# Codex runtime
+codex_timeout_sec: 600
+# Deprecated: kept for backward compatibility only, ignored in single-pass mode.
+codex_chunk_chars: 12000
+# Deprecated: kept for backward compatibility only, ignored in single-pass mode.
+codex_chunk_overlap: 800
+codex_skip_git_repo_check: true
+codex_use_search: false
+codex_max_concurrency: 8
+paper_eval_concurrency: 8
+github_scan_max: 3
+
+# Prompt templates
+codex_prompt_chunk_path: "prompts/codex_tex_chunk_extract.txt"
+codex_prompt_score_path: "prompts/codex_final_score.txt"
+codex_prompt_main_path: "prompts/codex_select_main_tex.txt"
+codex_prompt_candidate_path: "prompts/codex_candidate_score.txt"
+codex_prompt_clean_path: "prompts/codex_clean_fulltext.txt"
+codex_prompt_markdown_path: "prompts/codex_markdown_detail.txt"
+
+# Whitelists
+whitelist_path: "configs/whitelist_authors.yaml"
+super_whitelist_path: "configs/super_whitelist.yaml"
+super_whitelist_enabled_main: true
+super_whitelist_text_limit: 8000
+super_whitelist_force_notify: true
+super_whitelist_min_alias_len: 4
+
+# Topic retrieval / boosts (replace with your domain terms)
+keywords:
+  - "reinforcement learning from human feedback"
+  - "direct preference optimization"
+  - "reward model"
+  - "rlvr"
+  - "llm agent"
+  - "multimodal rlhf"
+topic_keywords:
+  alignment_post_training:
+    - "reinforcement learning from human feedback"
+    - "rlhf"
+    - "rlaif"
+    - "constitutional ai"
+    - "proximal policy optimization"
+  preference_optimization:
+    - "direct preference optimization"
+    - "dpo"
+    - "orpo"
+    - "simpo"
+    - "kto"
+  reward_modeling_and_judging:
+    - "reward model"
+    - "rewardbench"
+    - "llm-as-a-judge"
+    - "ultrafeedback"
+  reasoning_verifiable_rl:
+    - "rlvr"
+    - "process reward model"
+    - "process supervision"
+    - "grpo"
+    - "step-level reward"
+  agentic_interactive_rl:
+    - "llm agent"
+    - "agentic reinforcement learning"
+    - "web navigation"
+    - "browser agent"
+    - "computer-use agent"
+    - "self-play rl"
+  domain_applications:
+    - "code generation reinforcement learning"
+    - "multimodal rlhf"
+    - "vision-language alignment"
+    - "generative recommendation"
+topic_boost:
+  alignment_post_training: 2.4
+  preference_optimization: 2.5
+  reward_modeling_and_judging: 2.5
+  reasoning_verifiable_rl: 2.8
+  agentic_interactive_rl: 2.6
+  domain_applications: 2.3
+  generic_penalty: -1.2

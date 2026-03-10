@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airesearch"
+version = "0.1.0"
+description = "Automated HF/arXiv paper discovery and scoring pipeline with MCP adapters."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+  { name = "AIResearch contributors" }
+]
+dependencies = [
+  "anyio>=4.0.0",
+  "PyYAML>=6.0.0",
+  "mcp>=1.0.0"
+]
+
+[project.scripts]
+airesearch = "airesearch.__main__:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0"
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["_tmp_runtime", "_tmp_obsidian", "__pycache__", ".git"]
+cache_dir = ".codex_runtime/pytest_cache"

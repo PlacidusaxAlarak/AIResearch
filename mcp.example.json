@@ -1,0 +1,54 @@
+{
+  "mcpServers": {
+    "arxiv": {
+      "command": "python",
+      "args": [
+        "-m",
+        "airesearch.mcp.arxiv"
+      ]
+    },
+    "hf_papers": {
+      "command": "python",
+      "args": [
+        "-m",
+        "airesearch.mcp.hf_papers"
+      ]
+    },
+    "scholarly": {
+      "command": "python",
+      "args": [
+        "-m",
+        "airesearch.mcp.scholarly"
+      ],
+      "env": {
+        "SEMANTIC_SCHOLAR_API_KEY": "${SEMANTIC_SCHOLAR_API_KEY}"
+      }
+    },
+    "github": {
+      "command": "python",
+      "args": [
+        "-m",
+        "airesearch.mcp.github"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "obsidian": {
+      "command": "python",
+      "args": [
+        "-m",
+        "airesearch.mcp.obsidian"
+      ],
+      "env": {
+        "OBSIDIAN_VAULT": "/path/to/your/ObsidianVault"
+      }
+    },
+    "email": {
+      "command": "mcp-email-server",
+      "args": [
+        "stdio"
+      ]
+    }
+  }
+}

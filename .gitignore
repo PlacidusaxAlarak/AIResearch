@@ -1,0 +1,51 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local runtime artifacts
+state/
+output/
+runtime/
+stdio_err.log
+clean_text.txt
+tmp*/
+tmp_*/
+.tmp/
+.codex_runtime/
+tests/_tmp_runtime/
+tests/_tmp_obsidian/
+
+# Large local paper working directories
+arxiv_paper/
+arxiv_paper_run/
+arxiv_paper_tmp*/
+
+# Local secrets
+.env
+config.local.yaml
+mcp.local.json
+tools/recovery/recovery_report.json
+
+# Packaging artifacts
+*.egg-info/

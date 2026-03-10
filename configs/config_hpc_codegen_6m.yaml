@@ -1,0 +1,97 @@
+state_dir: "state"
+output_root: "output"
+obsidian_vault: "g:/ObsidianVault"
+obsidian_note_dir: "papers_hpc_codegen"
+email_recipients:
+  - "2173729690@qq.com"
+email_subject_prefix: "[AIResearch-HPC] "
+email_account_name: "qq"
+email_backend: "mcp"
+
+keywords:
+  - "high performance computing"
+  - "HPC"
+  - "code generation"
+  - "program synthesis"
+  - "LLM code generation"
+  - "CUDA kernel generation"
+  - "GPU kernel optimization"
+  - "OpenMP code generation"
+  - "Triton kernel"
+  - "compiler autotuning"
+  - "MLIR code generation"
+
+topic_keywords:
+  hpc-codegen:
+    - "high performance computing"
+    - "hpc"
+    - "parallel programming"
+    - "cuda"
+    - "openmp"
+    - "openacc"
+    - "gpu kernel"
+    - "kernel generation"
+  ai-codegen:
+    - "large language model"
+    - "llm"
+    - "code generation"
+    - "program synthesis"
+    - "neural code"
+    - "code agent"
+  compiler-opt:
+    - "compiler"
+    - "autotuning"
+    - "auto-scheduling"
+    - "mlir"
+    - "polyhedral"
+    - "code optimization"
+
+topic_boost:
+  hpc-codegen: 2.5
+  ai-codegen: 2.0
+  compiler-opt: 1.8
+  generic_penalty: -0.5
+
+codex_prompt_chunk_path: "prompts/codex_tex_chunk_extract.txt"
+codex_prompt_score_path: "prompts/codex_final_score.txt"
+codex_prompt_candidate_path: "prompts/codex_candidate_score.txt"
+codex_prompt_clean_path: "prompts/codex_clean_fulltext.txt"
+codex_prompt_markdown_path: "prompts/codex_markdown_detail.txt"
+
+codex_timeout_sec: 600
+codex_chunk_chars: 12000
+codex_chunk_overlap: 800
+codex_skip_git_repo_check: true
+codex_use_search: false
+codex_max_concurrency: 4
+paper_eval_concurrency: 3
+github_scan_max: 2
+
+codex_candidate_score_threshold: 2.4
+candidate_relevance_min: 2.0
+candidate_evidence_min: 1.8
+candidate_score_weights:
+  relevance_score: 1.5
+  novelty_score: 1.0
+  evidence_score: 1.2
+  reproducibility_score: 0.9
+  clarity_score: 0.6
+  impact_score: 0.8
+
+whitelist_bonus: 0.2
+whitelist_path: "configs/whitelist_authors.yaml"
+super_whitelist_path: "configs/super_whitelist.yaml"
+super_whitelist_enabled_main: false
+super_whitelist_text_limit: 8000
+super_whitelist_force_notify: false
+super_whitelist_min_alias_len: 4
+
+days_back: 180
+arxiv_query_max_terms: 6
+arxiv_max_results_per_query: 80
+hf_trending_limit: 40
+stage1_prefilter_enabled: true
+stage1_top_n: 18
+stage1_min_score: 0.3
+stage1_fallback_top_k: 12
+hf_date_field: "submitted_on_daily"

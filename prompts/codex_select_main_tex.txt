@@ -1,0 +1,16 @@
+You are an expert LaTeX reviewer. Choose the main TeX file that likely contains the full paper.
+
+Return JSON ONLY. No markdown, no extra text.
+
+Schema:
+{
+  "main_tex": "full path from the candidates list"
+}
+
+Rules:
+- main_tex MUST exactly match one of the candidate paths.
+- Prefer files that contain \\documentclass and \\begin{document}.
+- If multiple candidates qualify, choose the one with largest size or highest include_count.
+
+Candidates:
+{candidates}

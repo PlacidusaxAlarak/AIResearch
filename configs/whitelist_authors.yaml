@@ -1,0 +1,91 @@
+authors:
+  # Classic papers: first/second author + last author (proxy for corresponding when not explicit).
+  # InstructGPT (NeurIPS 2022)
+  - "Long Ouyang"
+  - "Jeffrey Wu"
+  - "Ryan Lowe"
+
+  # Learning to Summarize from Human Feedback (arXiv:2009.01325)
+  - "Nisan Stiennon"
+  - "Paul Christiano"
+
+  # Deep RL from Human Preferences (arXiv:1706.03741)
+  - "Jan Leike"
+  - "Dario Amodei"
+
+  # Helpful & Harmless Assistant with RLHF (arXiv:2204.05862)
+  - "Yuntao Bai"
+  - "Andy Jones"
+  - "Jared Kaplan"
+
+  # Constitutional AI (arXiv:2212.08073)
+  - "Saurav Kadavath"
+  - "Tom B. Brown"
+
+  # Direct Preference Optimization (arXiv:2305.18290)
+  - "Rafael Rafailov"
+  - "Archit Sharma"
+  - "Chelsea Finn"
+
+  # Minerva (arXiv:2206.14858)
+  - "Aitor Lewkowycz"
+  - "Anders Andreassen"
+  - "Vedant Misra"
+
+  # GSM8K verifiers (arXiv:2110.14168)
+  - "Karl Cobbe"
+  - "Vineet Kosaraju"
+  - "John Schulman"
+
+  # DeepSeekMath (arXiv:2402.03300)
+  - "Zhihong Shao"
+  - "Peiyi Wang"
+  - "Daya Guo"
+
+  # Codex (arXiv:2107.03374)
+  - "Mark Chen"
+  - "Jerry Tworek"
+  - "Wojciech Zaremba"
+
+  # AlphaCode (arXiv:2203.07814)
+  - "Yujia Li"
+  - "David Choi"
+  - "Oriol Vinyals"
+
+  # CodeRL (arXiv:2207.01780)
+  - "Hung Le"
+  - "Yue Wang"
+  - "Steven C.H. Hoi"
+
+  # Qwen Technical Report (arXiv:2309.16609)
+  - "Jinze Bai"
+  - "Shuai Bai"
+  - "Tianhang Zhu"
+
+  # Baichuan 2 Technical Report (arXiv:2309.10305)
+  - "Aiyuan Yang"
+  - "Bin Xiao"
+  - "Zhiying Wu"
+
+  # AI leaders (requested)
+  - "Xipeng Qiu"
+  - "Qiu Xipeng"
+  - "Jie Tang"
+  - "Tang Jie"
+  - "Zhiyuan Liu"
+  - "Liu Zhiyuan"
+  - "Ilya Sutskever"
+  - "Alec Radford"
+  - "Chris Olah"
+  - "Geoffrey Hinton"
+  - "Yoshua Bengio"
+  - "Yann LeCun"
+  - "Andrew Ng"
+  - "Fei-Fei Li"
+  - "David Silver"
+  - "Richard S. Sutton"
+  - "Pieter Abbeel"
+  - "Sergey Levine"
+  - "Christopher D. Manning"
+  - "Percy Liang"
+  - "Dan Jurafsky"

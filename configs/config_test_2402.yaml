@@ -1,0 +1,48 @@
+# Test config for single arXiv paper
+state_dir: "state"
+output_root: "output_test_2402"
+email_recipients:
+  - "1972400434@qq.com"
+email_subject_prefix: "[AIResearch] "
+email_account_name: "qq"
+email_backend: "mcp"
+obsidian_vault: "g:/Test/obsidian_vault"
+keywords:
+  - "2402.03300"
+topic_keywords:
+  post_training:
+    - "post-training"
+    - "post training"
+    - "instruction tuning"
+    - "alignment tuning"
+  agentic_rl:
+    - "agentic RL"
+    - "RL agent"
+    - "tool-use"
+    - "tool use"
+    - "planning"
+    - "self-reflection"
+  math_reasoning_code:
+    - "math reasoning"
+    - "code reasoning"
+    - "program synthesis"
+    - "symbolic reasoning"
+    - "reasoning tokens"
+    - "RL for math"
+    - "RL for reasoning"
+    - "RL for code"
+topic_boost:
+  post_training: 2.0
+  agentic_rl: 2.0
+  math_reasoning_code: 2.0
+  generic_penalty: -1.0
+new_paper_days: 0
+citation_velocity_threshold: 0.0
+codex_prompt_chunk_path: "prompts/codex_tex_chunk_extract.txt"
+codex_prompt_score_path: "prompts/codex_final_score.txt"
+codex_timeout_sec: 120
+codex_chunk_chars: 12000
+codex_chunk_overlap: 800
+codex_skip_git_repo_check: true
+codex_use_search: true
+github_scan_max: 3
