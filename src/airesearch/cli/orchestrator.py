@@ -2201,6 +2201,24 @@ async def _process_paper(
             "email_body_markdown": _default_email_analysis_markdown(tldr, tldr),
         }
     else:
+        gate_entry = {
+            "paper": paper,
+            "stage1_score": prepared.stage1_score,
+            "topic_score": prepared.topic_score,
+            "coverage_score": prepared.coverage_score,
+            "super_whitelist_hit": prepared.super_whitelist_hit,
+        }
+        gate_result = await evaluate_candidate_gate(gate_entry, prepared.source_text)
+        if not bool(gate_result.get("passed", False)):
+            reason = str(gate_result.get("reason", "")).strip() or "threshold_not_met"
+            weighted = _as_float(gate_result.get("weighted_score", 0.0), 0.0)
+            _log(
+                "INFO",
+                f"Skip notify for {paper.canonical_id}: candidate gate rejected "
+                f"(weighted={weighted:.3f}, reason={reason})",
+            )
+            return set()
+
         _log("INFO", f"Processing paper: {paper.canonical_id} | {paper.title}")
         codex_result = await codex_process_paper(paper, prepared.source_text, prepared.source_backend)
 

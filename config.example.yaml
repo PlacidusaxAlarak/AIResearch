@@ -70,55 +70,71 @@ super_whitelist_text_limit: 8000
 super_whitelist_force_notify: true
 super_whitelist_min_alias_len: 4
 
-# Topic retrieval / boosts (replace with your domain terms)
+# High-precision core-direction retrieval for the main feed
 keywords:
-  - "reinforcement learning from human feedback"
-  - "direct preference optimization"
-  - "reward model"
+  - "reinforcement learning with verifiable rewards"
   - "rlvr"
-  - "llm agent"
-  - "multimodal rlhf"
+  - "reinforcement learning from human feedback"
+  - "rlhf"
+  - "group relative policy optimization"
+  - "grpo"
+  - "direct preference optimization"
+  - "dpo"
+  - "proximal policy optimization"
+  - "ppo"
+  - "process reward model"
+  - "prm"
+  - "reward hacking"
+  - "agentic reinforcement learning"
+  - "tool calling"
+  - "tool-calling"
+  - "multi-turn agent"
 topic_keywords:
-  alignment_post_training:
+  rlvr:
+    - "reinforcement learning with verifiable rewards"
+    - "rlvr"
+    - "verifiable reward"
+    - "verifiable rewards"
+    - "outcome reward model"
+  rlhf:
     - "reinforcement learning from human feedback"
     - "rlhf"
     - "rlaif"
-    - "constitutional ai"
-    - "proximal policy optimization"
-  preference_optimization:
+    - "human feedback"
+    - "preference data"
+  policy_optimization_variants:
+    - "group relative policy optimization"
+    - "grpo"
     - "direct preference optimization"
     - "dpo"
-    - "orpo"
-    - "simpo"
-    - "kto"
-  reward_modeling_and_judging:
-    - "reward model"
-    - "rewardbench"
-    - "llm-as-a-judge"
-    - "ultrafeedback"
-  reasoning_verifiable_rl:
-    - "rlvr"
+    - "proximal policy optimization"
+    - "ppo"
+    - "preference optimization"
+  prm:
     - "process reward model"
+    - "prm"
     - "process supervision"
-    - "grpo"
     - "step-level reward"
-  agentic_interactive_rl:
-    - "llm agent"
+    - "reward model for reasoning"
+  reward_hacking:
+    - "reward hacking"
+    - "reward tampering"
+    - "specification gaming"
+    - "oversight failure"
+    - "scalable oversight"
+  agentic_rl_and_tools:
     - "agentic reinforcement learning"
-    - "web navigation"
-    - "browser agent"
-    - "computer-use agent"
-    - "self-play rl"
-  domain_applications:
-    - "code generation reinforcement learning"
-    - "multimodal rlhf"
-    - "vision-language alignment"
-    - "generative recommendation"
+    - "tool calling"
+    - "tool-calling"
+    - "tool use"
+    - "tool-use"
+    - "multi-turn agent"
+    - "interactive agent"
 topic_boost:
-  alignment_post_training: 2.4
-  preference_optimization: 2.5
-  reward_modeling_and_judging: 2.5
-  reasoning_verifiable_rl: 2.8
-  agentic_interactive_rl: 2.6
-  domain_applications: 2.3
+  rlvr: 2.8
+  rlhf: 2.5
+  policy_optimization_variants: 2.7
+  prm: 2.7
+  reward_hacking: 2.5
+  agentic_rl_and_tools: 2.6
   generic_penalty: -1.2

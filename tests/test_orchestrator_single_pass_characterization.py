@@ -25,6 +25,23 @@ def _build_paper() -> orch_impl.Paper:
     )
 
 
+def _build_prepared(paper: orch_impl.Paper) -> orch_impl.PreparedPaper:
+    return orch_impl.PreparedPaper(
+        paper=paper,
+        whitelisted=False,
+        super_whitelist_hit=False,
+        super_whitelist_hit_reasons=[],
+        citation_velocity=0.0,
+        source_markdown="# Parsed Markdown",
+        source_markdown_path="output/mineru/2602.99999/extract/content.md",
+        pdf_path="output/mineru/2602.99999/source.pdf",
+        mineru_batch_id="batch-123",
+        stage1_score=1.2,
+        topic_score=1.0,
+        coverage_score=0.2,
+    )
+
+
 def _fake_prompt_loader(path):
     if path == orch_impl.CODEX_PROMPT_PAPER_ANALYSIS_PATH:
         return (
@@ -232,6 +249,95 @@ class TestOrchestratorSinglePassCharacterization(unittest.TestCase):
 
         self.assertEqual("## Email\n- rendered once", out)
         self.assertEqual(0, run_mock.await_count)
+
+
+    def test_process_paper_skips_side_effects_when_candidate_gate_rejects(self) -> None:
+        paper = _build_paper()
+        prepared = _build_prepared(paper)
+        gate_mock = AsyncMock(return_value={
+            "mode": "codex",
+            "scores": {"relevance_score": 1.5, "evidence_score": 2.0},
+            "weighted_score": 2.1,
+            "passed": False,
+            "reason": "domain paper only",
+        })
+        codex_result = {
+            "chunk_summaries": ["summary item"],
+            "methods_loss": ["loss item"],
+            "hyperparams": ["lr=1e-4"],
+            "evidence_notes": ["ablation included"],
+            "github_urls": [],
+            "primary_github_url": "",
+            "recommendation_score": 8,
+            "recommendation_reason": "Strong evidence",
+            "direction_tags": ["rlvr"],
+            "tldr": "Short summary",
+            "summary": "Longer summary",
+            "email_body_markdown": "## Email\n- already rendered",
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch.object(orch_impl, "evaluate_candidate_gate", gate_mock),
+                patch.object(orch_impl, "codex_process_paper", AsyncMock(return_value=codex_result)) as process_mock,
+                patch.object(orch_impl, "check_reproducibility", AsyncMock(return_value=("Tier: U (Unknown)", []))) as repro_mock,
+                patch.object(orch_impl, "save_to_obsidian", AsyncMock()) as save_mock,
+                patch.object(orch_impl, "codex_generate_email_analysis", AsyncMock(return_value="## Email\n- rendered")) as email_mock,
+                patch.object(orch_impl, "notify", AsyncMock()) as notify_mock,
+            ):
+                out = anyio.run(orch_impl._process_paper, prepared, Path(tmpdir))
+
+        self.assertEqual(set(), out)
+        gate_mock.assert_awaited_once()
+        process_mock.assert_not_awaited()
+        repro_mock.assert_not_awaited()
+        save_mock.assert_not_awaited()
+        email_mock.assert_not_awaited()
+        notify_mock.assert_not_awaited()
+
+    def test_process_paper_notifies_after_candidate_gate_passes(self) -> None:
+        paper = _build_paper()
+        prepared = _build_prepared(paper)
+        gate_mock = AsyncMock(return_value={
+            "mode": "codex",
+            "scores": {"relevance_score": 4.4, "evidence_score": 4.2},
+            "weighted_score": 4.3,
+            "passed": True,
+            "reason": "core direction fit",
+        })
+        codex_result = {
+            "chunk_summaries": ["summary item"],
+            "methods_loss": ["loss item"],
+            "hyperparams": ["lr=1e-4"],
+            "evidence_notes": ["ablation included"],
+            "github_urls": [],
+            "primary_github_url": "",
+            "recommendation_score": 8,
+            "recommendation_reason": "Strong evidence",
+            "direction_tags": ["rlvr"],
+            "tldr": "Short summary",
+            "summary": "Longer summary",
+            "email_body_markdown": "## Email\n- already rendered",
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with (
+                patch.object(orch_impl, "evaluate_candidate_gate", gate_mock),
+                patch.object(orch_impl, "codex_process_paper", AsyncMock(return_value=codex_result)) as process_mock,
+                patch.object(orch_impl, "check_reproducibility", AsyncMock(return_value=("Tier: U (Unknown)", []))) as repro_mock,
+                patch.object(orch_impl, "save_to_obsidian", AsyncMock()) as save_mock,
+                patch.object(orch_impl, "codex_generate_email_analysis", AsyncMock(return_value="## Email\n- rendered")) as email_mock,
+                patch.object(orch_impl, "notify", AsyncMock()) as notify_mock,
+            ):
+                out = anyio.run(orch_impl._process_paper, prepared, Path(tmpdir))
+
+        self.assertEqual({paper.canonical_id, paper.paper_id}, out)
+        gate_mock.assert_awaited_once()
+        process_mock.assert_awaited_once()
+        repro_mock.assert_awaited_once()
+        save_mock.assert_awaited_once()
+        email_mock.assert_awaited_once()
+        notify_mock.assert_awaited_once()
 
 
 if __name__ == "__main__":

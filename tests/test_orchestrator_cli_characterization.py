@@ -7,7 +7,15 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import yaml
+
 from airesearch.compatibility import resolve_config_path
+
+
+def _load_yaml(path: str) -> dict:
+    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
 
 
 class TestOrchestratorCliCharacterization(unittest.TestCase):
@@ -82,6 +90,43 @@ class TestOrchestratorCliCharacterization(unittest.TestCase):
                     os.environ["AIRESEARCH_CONFIG"] = old_env
 
             self.assertEqual(cfg_env.resolve(), selected)
+
+
+    def test_config_example_keywords_focus_on_core_directions(self) -> None:
+        payload = _load_yaml("config.example.yaml")
+        keywords = payload.get("keywords", [])
+
+        self.assertLessEqual(len(keywords), 18)
+        self.assertIn("rlvr", keywords)
+        self.assertIn("reinforcement learning from human feedback", keywords)
+        self.assertIn("direct preference optimization", keywords)
+        self.assertIn("process reward model", keywords)
+        self.assertIn("agentic reinforcement learning", keywords)
+        self.assertIn("tool calling", keywords)
+        self.assertIn("multi-turn agent", keywords)
+        self.assertNotIn("multimodal rlhf", keywords)
+        self.assertNotIn("vision-language alignment", keywords)
+        self.assertNotIn("generative recommendation", keywords)
+        self.assertNotIn("browser agent", keywords)
+
+    def test_config_local_keywords_focus_on_core_directions(self) -> None:
+        payload = _load_yaml("config.local.yaml")
+        keywords = payload.get("keywords", [])
+        topic_keywords = payload.get("topic_keywords", {})
+
+        self.assertLessEqual(len(keywords), 18)
+        self.assertIn("rlvr", keywords)
+        self.assertIn("reinforcement learning from human feedback", keywords)
+        self.assertIn("direct preference optimization", keywords)
+        self.assertIn("process reward model", keywords)
+        self.assertIn("agentic reinforcement learning", keywords)
+        self.assertIn("tool calling", keywords)
+        self.assertIn("multi-turn agent", keywords)
+        self.assertNotIn("multimodal rlhf", keywords)
+        self.assertNotIn("vision-language alignment", keywords)
+        self.assertNotIn("generative recommendation", keywords)
+        self.assertNotIn("browser agent", keywords)
+        self.assertNotIn("domain_applications", topic_keywords)
 
 
 if __name__ == "__main__":
