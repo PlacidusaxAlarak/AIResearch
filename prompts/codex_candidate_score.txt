@@ -29,10 +29,12 @@ Scoring rules:
 - Use the cleaned full text as the primary evidence for every score.
 - Do not score from abstract-only impressions.
 - Relevance: direct fit to one of the core directions above.
+- Core-direction benchmark papers are in scope even without a new optimization algorithm.
+- New benchmarks, audits, evaluation suites, or failure taxonomies that directly target the core directions can receive strong relevance and impact scores.
 - Score relevance 1.0-2.0 when overlap is only indirect, domain-specific, or application-only.
 - Papers that merely mention DPO/GRPO/PPO, reward models, agents, or tools inside another domain are low relevance.
-- Papers about robotics, recommendation, vision, restoration, navigation, audio, or other applications are low relevance unless they introduce a new core RL/agent training method for this feed.
-- Papers about agents or tool use without RL, post-training, reward-learning, or clear optimization contributions are low relevance.
+- Papers about robotics, recommendation, vision, restoration, navigation, audio, or other applications are low relevance unless they introduce a new core RL/agent training method for this feed or provide a core-direction benchmark.
+- Papers about agents or tool use without RL, post-training, reward-learning, or clear optimization contributions are low relevance unless they provide a core-direction benchmark.
 - Novelty: originality and freshness vs established baselines.
 - Evidence: empirical evidence quality (benchmarks, ablations, validation).
 - Reproducibility: implementation transparency and reproducibility signals.

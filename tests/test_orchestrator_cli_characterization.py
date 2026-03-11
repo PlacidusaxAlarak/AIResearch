@@ -129,5 +129,13 @@ class TestOrchestratorCliCharacterization(unittest.TestCase):
         self.assertNotIn("domain_applications", topic_keywords)
 
 
+    def test_candidate_prompt_allows_core_direction_benchmarks(self) -> None:
+        prompt = Path("prompts/codex_candidate_score.txt").read_text(encoding="utf-8")
+
+        self.assertIn("benchmark", prompt.lower())
+        self.assertIn("core-direction benchmark", prompt.lower())
+        self.assertIn("even without a new optimization algorithm", prompt.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
