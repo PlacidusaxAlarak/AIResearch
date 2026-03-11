@@ -22,7 +22,7 @@ import anyio
 import yaml
 
 from ..compatibility import repo_root, resolve_config_path
-from ..core import codex_cli, latex_reader
+from ..core import codex_cli, latex_reader, mineru_pdf
 from ..mcp import arxiv as arxiv_mcp
 from ..mcp import email as email_mcp
 from ..mcp import github as github_mcp
@@ -178,12 +178,13 @@ EMAIL_RECIPIENTS: List[str] = []
 EMAIL_SUBJECT_PREFIX = "[AIResearch] "
 EMAIL_ACCOUNT_NAME = "qq"
 
-CODEX_PROMPT_CHUNK_PATH = BASE_DIR / "prompts" / "codex_tex_chunk_extract.txt"
-CODEX_PROMPT_SCORE_PATH = BASE_DIR / "prompts" / "codex_final_score.txt"
-CODEX_PROMPT_MAIN_PATH = BASE_DIR / "prompts" / "codex_select_main_tex.txt"
+CODEX_PROMPT_PAPER_ANALYSIS_PATH = BASE_DIR / "prompts" / "codex_paper_analysis.txt"
 CODEX_PROMPT_CANDIDATE_PATH = BASE_DIR / "prompts" / "codex_candidate_score.txt"
-CODEX_PROMPT_CLEAN_PATH = BASE_DIR / "prompts" / "codex_clean_fulltext.txt"
-CODEX_PROMPT_MARKDOWN_PATH = BASE_DIR / "prompts" / "codex_markdown_detail.txt"
+
+MINERU_POLL_INTERVAL_SEC = 5
+MINERU_PER_RUN_TIMEOUT_SEC = 600
+MINERU_MAX_ATTEMPTS = 3
+MINERU_BACKOFF_BASE_SEC = 2.0
 
 CODEX_TIMEOUT_SEC = 600
 CODEX_CHUNK_CHARS = 12000
@@ -335,21 +336,67 @@ class Paper:
     submitted_on_daily: Optional[datetime] = None
 
 
-@dataclass
+@dataclass(init=False)
 class PreparedPaper:
     paper: Paper
     whitelisted: bool
     super_whitelist_hit: bool
     super_whitelist_hit_reasons: List[str]
     citation_velocity: float
-    latex_text: str
-    used_files: List[str]
-    clean_text: str
-    stage1_score: float = 0.0
-    topic_score: float = 0.0
-    coverage_score: float = 0.0
-    clean_exception: bool = False
-    clean_exception_reason: str = ""
+    source_text: str
+    source_path: str
+    source_backend: str
+    pdf_path: str
+    mineru_batch_id: str
+    stage1_score: float
+    topic_score: float
+    coverage_score: float
+    clean_exception: bool
+    clean_exception_reason: str
+
+    def __init__(
+        self,
+        paper: Paper,
+        whitelisted: bool,
+        super_whitelist_hit: bool,
+        super_whitelist_hit_reasons: List[str],
+        citation_velocity: float,
+        source_text: str = "",
+        source_path: str = "",
+        source_backend: str = "",
+        pdf_path: str = "",
+        mineru_batch_id: str = "",
+        stage1_score: float = 0.0,
+        topic_score: float = 0.0,
+        coverage_score: float = 0.0,
+        clean_exception: bool = False,
+        clean_exception_reason: str = "",
+        source_markdown: Optional[str] = None,
+        source_markdown_path: Optional[str] = None,
+    ) -> None:
+        self.paper = paper
+        self.whitelisted = whitelisted
+        self.super_whitelist_hit = super_whitelist_hit
+        self.super_whitelist_hit_reasons = list(super_whitelist_hit_reasons)
+        self.citation_velocity = citation_velocity
+        self.source_text = source_text if source_text else str(source_markdown or "")
+        self.source_path = source_path if source_path else str(source_markdown_path or "")
+        self.source_backend = source_backend
+        self.pdf_path = pdf_path
+        self.mineru_batch_id = mineru_batch_id
+        self.stage1_score = stage1_score
+        self.topic_score = topic_score
+        self.coverage_score = coverage_score
+        self.clean_exception = clean_exception
+        self.clean_exception_reason = clean_exception_reason
+
+    @property
+    def source_markdown(self) -> str:
+        return self.source_text
+
+    @property
+    def source_markdown_path(self) -> str:
+        return self.source_path
 
 
 # ------------------
@@ -439,12 +486,12 @@ def apply_config(config: Dict[str, Any]) -> None:
     global EMAIL_RECIPIENTS
     global EMAIL_SUBJECT_PREFIX
     global EMAIL_ACCOUNT_NAME
-    global CODEX_PROMPT_CHUNK_PATH
-    global CODEX_PROMPT_SCORE_PATH
-    global CODEX_PROMPT_MAIN_PATH
+    global CODEX_PROMPT_PAPER_ANALYSIS_PATH
     global CODEX_PROMPT_CANDIDATE_PATH
-    global CODEX_PROMPT_CLEAN_PATH
-    global CODEX_PROMPT_MARKDOWN_PATH
+    global MINERU_POLL_INTERVAL_SEC
+    global MINERU_PER_RUN_TIMEOUT_SEC
+    global MINERU_MAX_ATTEMPTS
+    global MINERU_BACKOFF_BASE_SEC
     global CODEX_TIMEOUT_SEC
     global CODEX_CHUNK_CHARS
     global CODEX_CHUNK_OVERLAP
@@ -612,23 +659,38 @@ def apply_config(config: Dict[str, Any]) -> None:
         _log("INFO", f"Config email_backend: {os.environ['EMAIL_BACKEND']}")
 
     if "codex_prompt_chunk_path" in config:
-        CODEX_PROMPT_CHUNK_PATH = _resolve_path(str(config["codex_prompt_chunk_path"]))
-        _log("INFO", f"Config codex_prompt_chunk_path: {CODEX_PROMPT_CHUNK_PATH}")
+        deprecated_path = _resolve_path(str(config["codex_prompt_chunk_path"]))
+        _log("WARN", f"Config codex_prompt_chunk_path is deprecated and ignored in MinerU mode ({deprecated_path})")
     if "codex_prompt_score_path" in config:
-        CODEX_PROMPT_SCORE_PATH = _resolve_path(str(config["codex_prompt_score_path"]))
-        _log("INFO", f"Config codex_prompt_score_path: {CODEX_PROMPT_SCORE_PATH}")
+        deprecated_path = _resolve_path(str(config["codex_prompt_score_path"]))
+        _log("WARN", f"Config codex_prompt_score_path is deprecated and ignored in MinerU mode ({deprecated_path})")
     if "codex_prompt_main_path" in config:
-        CODEX_PROMPT_MAIN_PATH = _resolve_path(str(config["codex_prompt_main_path"]))
-        _log("INFO", f"Config codex_prompt_main_path: {CODEX_PROMPT_MAIN_PATH}")
+        deprecated_path = _resolve_path(str(config["codex_prompt_main_path"]))
+        _log("WARN", f"Config codex_prompt_main_path is deprecated and ignored in MinerU mode ({deprecated_path})")
     if "codex_prompt_candidate_path" in config:
         CODEX_PROMPT_CANDIDATE_PATH = _resolve_path(str(config["codex_prompt_candidate_path"]))
         _log("INFO", f"Config codex_prompt_candidate_path: {CODEX_PROMPT_CANDIDATE_PATH}")
     if "codex_prompt_clean_path" in config:
-        CODEX_PROMPT_CLEAN_PATH = _resolve_path(str(config["codex_prompt_clean_path"]))
-        _log("INFO", f"Config codex_prompt_clean_path: {CODEX_PROMPT_CLEAN_PATH}")
+        deprecated_path = _resolve_path(str(config["codex_prompt_clean_path"]))
+        _log("WARN", f"Config codex_prompt_clean_path is deprecated and ignored in MinerU mode ({deprecated_path})")
     if "codex_prompt_markdown_path" in config:
-        CODEX_PROMPT_MARKDOWN_PATH = _resolve_path(str(config["codex_prompt_markdown_path"]))
-        _log("INFO", f"Config codex_prompt_markdown_path: {CODEX_PROMPT_MARKDOWN_PATH}")
+        deprecated_path = _resolve_path(str(config["codex_prompt_markdown_path"]))
+        _log("WARN", f"Config codex_prompt_markdown_path is deprecated and ignored in MinerU mode ({deprecated_path})")
+    if "codex_prompt_paper_analysis_path" in config:
+        CODEX_PROMPT_PAPER_ANALYSIS_PATH = _resolve_path(str(config["codex_prompt_paper_analysis_path"]))
+        _log("INFO", f"Config codex_prompt_paper_analysis_path: {CODEX_PROMPT_PAPER_ANALYSIS_PATH}")
+    if "mineru_poll_interval_sec" in config:
+        MINERU_POLL_INTERVAL_SEC = max(0, _parse_int(config["mineru_poll_interval_sec"], MINERU_POLL_INTERVAL_SEC))
+        _log("INFO", f"Config mineru_poll_interval_sec: {MINERU_POLL_INTERVAL_SEC}")
+    if "mineru_per_run_timeout_sec" in config:
+        MINERU_PER_RUN_TIMEOUT_SEC = max(1, _parse_int(config["mineru_per_run_timeout_sec"], MINERU_PER_RUN_TIMEOUT_SEC))
+        _log("INFO", f"Config mineru_per_run_timeout_sec: {MINERU_PER_RUN_TIMEOUT_SEC}")
+    if "mineru_max_attempts" in config:
+        MINERU_MAX_ATTEMPTS = max(1, _parse_int(config["mineru_max_attempts"], MINERU_MAX_ATTEMPTS))
+        _log("INFO", f"Config mineru_max_attempts: {MINERU_MAX_ATTEMPTS}")
+    if "mineru_backoff_base_sec" in config:
+        MINERU_BACKOFF_BASE_SEC = max(0.0, _parse_float(config["mineru_backoff_base_sec"], MINERU_BACKOFF_BASE_SEC))
+        _log("INFO", f"Config mineru_backoff_base_sec: {MINERU_BACKOFF_BASE_SEC}")
     if "codex_timeout_sec" in config:
         CODEX_TIMEOUT_SEC = max(10, _parse_int(config["codex_timeout_sec"], CODEX_TIMEOUT_SEC))
         _log("INFO", f"Config codex_timeout_sec: {CODEX_TIMEOUT_SEC}")
@@ -1319,7 +1381,7 @@ async def evaluate_candidate_gate(entry: Dict[str, Any], clean_text: str) -> Dic
                 source_tags=", ".join(sorted(paper.source_tags)),
                 clean_fulltext=normalized[:40000],
             )
-            payload = await _run_codex_json(prompt)
+            payload = await _run_codex_json_cached("clean_fulltext", paper, prompt)
             mode = "codex"
         except Exception as exc:
             _log("WARN", f"Candidate gate codex failed for {paper.canonical_id}, fallback to heuristic: {exc}")
@@ -1393,6 +1455,166 @@ def _download_pdf_attachment_sync(
         raise RuntimeError("PDF download returned empty content")
     output_path.write_bytes(payload)
     return output_path
+
+
+def _mineru_output_root() -> Path:
+    return OUTPUT_ROOT / "mineru"
+
+
+def _mineru_state_root() -> Path:
+    return STATE_DIR / "mineru"
+
+
+def _is_missing_mineru_key_error(exc: BaseException) -> bool:
+    return "MINERU_API_KEY" in str(exc)
+
+
+def _build_prepared_exception(
+    paper: Paper,
+    whitelisted: bool,
+    super_hit: bool,
+    super_hit_reasons: List[str],
+    citation_velocity: float,
+    stage1_score: float,
+    topic_score: float,
+    coverage_score: float,
+    reason: str,
+    *,
+    source_text: str = "",
+    source_path: str = "",
+    source_backend: str = "",
+    pdf_path: str = "",
+    mineru_batch_id: str = "",
+) -> PreparedPaper:
+    return PreparedPaper(
+        paper=paper,
+        whitelisted=whitelisted,
+        super_whitelist_hit=super_hit,
+        super_whitelist_hit_reasons=super_hit_reasons,
+        citation_velocity=citation_velocity,
+        source_text=source_text,
+        source_path=source_path,
+        source_backend=source_backend,
+        pdf_path=pdf_path,
+        mineru_batch_id=mineru_batch_id,
+        stage1_score=stage1_score,
+        topic_score=topic_score,
+        coverage_score=coverage_score,
+        clean_exception=True,
+        clean_exception_reason=reason,
+    )
+
+
+async def prepare_pdf_markdown(paper: Paper) -> Dict[str, Any]:
+    pdf_url = _resolve_paper_pdf_url(paper)
+    if not pdf_url:
+        raise RuntimeError(f"PDF URL not found for {paper.canonical_id}")
+    _log("INFO", f"Preparing MinerU markdown for {paper.canonical_id}")
+    return await run_sync(
+        mineru_pdf.convert_pdf_to_markdown,
+        canonical_id=paper.canonical_id,
+        pdf_url=pdf_url,
+        output_root=_mineru_output_root(),
+        state_root=_mineru_state_root(),
+        poll_interval_sec=MINERU_POLL_INTERVAL_SEC,
+        per_run_timeout_sec=MINERU_PER_RUN_TIMEOUT_SEC,
+        max_attempts=MINERU_MAX_ATTEMPTS,
+        backoff_base_sec=MINERU_BACKOFF_BASE_SEC,
+    )
+
+
+def _select_fallback_tex_path(latex_result: Dict[str, Any]) -> str:
+    tex_path = str(latex_result.get("tex_path") or "").strip()
+    if tex_path:
+        return tex_path
+    tex_files = [Path(p) for p in latex_result.get("tex_files", []) if str(p).strip()]
+    selected = latex_reader.select_main_tex(tex_files)
+    return str(selected) if selected else ""
+
+
+async def _prepare_from_latex_fallback(
+    paper: Paper,
+    whitelisted: bool,
+    super_hit: bool,
+    super_hit_reasons: List[str],
+    citation_velocity: float,
+    stage1_score: float,
+    topic_score: float,
+    coverage_score: float,
+) -> Optional[PreparedPaper]:
+    try:
+        latex_result = await fetch_latex_source(paper)
+    except Exception as exc:
+        if whitelisted:
+            reason = f"latex_fetch_failed:{exc}"
+            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
+            return _build_prepared_exception(
+                paper,
+                whitelisted,
+                super_hit,
+                super_hit_reasons,
+                citation_velocity,
+                stage1_score,
+                topic_score,
+                coverage_score,
+                reason,
+            )
+        _log("ERROR", f"LaTeX source fetch failed for {paper.canonical_id}: {exc}")
+        return None
+
+    tex_path = _select_fallback_tex_path(latex_result)
+    if not tex_path:
+        reason = "no_tex_file"
+        if whitelisted:
+            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
+            return _build_prepared_exception(
+                paper,
+                whitelisted,
+                super_hit,
+                super_hit_reasons,
+                citation_velocity,
+                stage1_score,
+                topic_score,
+                coverage_score,
+                reason,
+            )
+        _log("WARN", f"No .tex file found for {paper.canonical_id}")
+        return None
+
+    try:
+        source_text, _used_files = latex_reader.read_latex_tree(Path(tex_path))
+    except Exception as exc:
+        if whitelisted:
+            reason = f"latex_read_failed:{exc}"
+            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
+            return _build_prepared_exception(
+                paper,
+                whitelisted,
+                super_hit,
+                super_hit_reasons,
+                citation_velocity,
+                stage1_score,
+                topic_score,
+                coverage_score,
+                reason,
+                source_path=tex_path,
+            )
+        _log("ERROR", f"LaTeX read failed for {paper.canonical_id}: {exc}")
+        return None
+
+    return PreparedPaper(
+        paper=paper,
+        whitelisted=whitelisted,
+        super_whitelist_hit=super_hit,
+        super_whitelist_hit_reasons=super_hit_reasons,
+        citation_velocity=citation_velocity,
+        source_text=source_text,
+        source_path=tex_path,
+        source_backend="latex_fallback",
+        stage1_score=stage1_score,
+        topic_score=topic_score,
+        coverage_score=coverage_score,
+    )
 
 
 # ------------------
@@ -1565,6 +1787,42 @@ def _ensure_list(value: Any) -> List[str]:
     return []
 
 
+def _cache_slug(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._")
+    return cleaned or "item"
+
+
+def _read_cached_json(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _codex_cache_path(scope: str, paper: Paper, prompt: str) -> Path:
+    paper_key = _cache_slug(paper.canonical_id or paper.paper_id or paper.title or "paper")
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    return STATE_DIR / "codex_cache" / _cache_slug(scope) / f"{paper_key}-{digest}.json"
+
+
+async def _run_codex_json_cached(scope: str, paper: Paper, prompt: str) -> Dict[str, Any]:
+    cache_path = _codex_cache_path(scope, paper, prompt)
+    cached = _read_cached_json(cache_path)
+    if cached is not None:
+        _log("INFO", f"Codex cache hit for {scope}: {paper.canonical_id}")
+        return cached
+
+    payload = await _run_codex_json(prompt)
+    try:
+        _atomic_write_json(cache_path, payload)
+    except Exception as exc:
+        _log("WARN", f"Failed to write Codex cache {cache_path}: {exc}")
+    return payload
+
+
 def _get_codex_semaphore() -> anyio.Semaphore:
     global _CODEX_SEMAPHORE
     if _CODEX_SEMAPHORE is None:
@@ -1585,166 +1843,123 @@ async def _run_codex_json(prompt: str) -> Dict[str, Any]:
         )
 
 
-async def clean_latex_fulltext(paper: Paper, latex_text: str) -> str:
-    if not latex_text.strip():
-        raise RuntimeError("Empty latex_text")
+async def codex_process_paper(
+    paper: Paper,
+    source_text: str,
+    source_backend: str = "unknown",
+) -> Dict[str, Any]:
+    normalized = source_text.strip()
+    if not normalized:
+        raise RuntimeError("Empty source_text")
 
-    template = _load_prompt(CODEX_PROMPT_CLEAN_PATH)
     _log(
         "INFO",
-        f"Cleaning fulltext for {paper.canonical_id} (single pass, {len(latex_text)} chars)",
+        f"Codex processing source text {paper.canonical_id} ({source_backend}, length {len(normalized)} chars)",
     )
-    prompt = _render_prompt(template, chunk=latex_text)
-    payload = await _run_codex_json(prompt)
-    merged = str(payload.get("clean_text", "")).strip()
-    if not merged:
-        raise RuntimeError("Fulltext cleaning returned empty output")
-    # Keep human-readable paragraph spacing while avoiding excessive blank lines.
-    merged = re.sub(r"\n{3,}", "\n\n", merged)
-    return merged
-
-
-async def codex_process_paper(paper: Paper, clean_text: str) -> Dict[str, Any]:
-    _log(
-        "INFO",
-        f"Codex processing clean text {paper.canonical_id} (single pass, length {len(clean_text)} chars)",
+    template = _load_prompt(CODEX_PROMPT_PAPER_ANALYSIS_PATH)
+    prompt = _render_prompt(
+        template,
+        title=paper.title,
+        authors=", ".join(paper.authors),
+        abstract=paper.abstract,
+        url=paper.url,
+        source_backend=source_backend,
+        source_text=normalized,
+        source_markdown=normalized,
     )
-
-    chunk_template: Optional[str] = None
-    score_template: Optional[str] = None
     try:
-        chunk_template = _load_prompt(CODEX_PROMPT_CHUNK_PATH)
+        payload = await _run_codex_json_cached("paper_analysis", paper, prompt)
     except Exception as exc:
-        _log("WARN", f"Chunk prompt unavailable ({CODEX_PROMPT_CHUNK_PATH}): {exc}")
-    try:
-        score_template = _load_prompt(CODEX_PROMPT_SCORE_PATH)
-    except Exception as exc:
-        _log("WARN", f"Score prompt unavailable ({CODEX_PROMPT_SCORE_PATH}): {exc}")
+        raise RuntimeError(
+            f"Codex paper analysis failed for {paper.canonical_id} (length {len(normalized)} chars): {exc}"
+        ) from exc
 
-    chunk_results: List[Dict[str, Any]] = []
-
-    if chunk_template:
-        prompt = _render_prompt(
-            chunk_template,
-            title=paper.title,
-            authors=", ".join(paper.authors),
-            abstract=paper.abstract,
-            chunk=clean_text,
-        )
-        try:
-            chunk_results.append(await _run_codex_json(prompt))
-        except Exception as exc:
-            raise RuntimeError(
-                f"Codex single-pass extract failed for {paper.canonical_id} "
-                f"(length {len(clean_text)} chars): {exc}"
-            ) from exc
-    else:
-        chunk_results.append(
-            {
-            "chunk_summary": [clean_text[:500] if clean_text else "No clean text"],
-            "methods_loss": [],
-            "hyperparams": [],
-            "evidence_notes": [],
-            "github_urls": [],
-            }
-        )
-
-    chunk_summaries: List[str] = []
-    methods_loss: List[str] = []
-    hyperparams: List[str] = []
-    evidence_notes: List[str] = []
-    github_urls: List[str] = []
-    for result in chunk_results:
-        chunk_summaries.extend(_ensure_list(result.get("chunk_summary")))
-        methods_loss.extend(_ensure_list(result.get("methods_loss")))
-        hyperparams.extend(_ensure_list(result.get("hyperparams")))
-        evidence_notes.extend(_ensure_list(result.get("evidence_notes")))
-        github_urls.extend(_ensure_list(result.get("github_urls")))
-
-    summary_block = "\n".join(f"- {s}" for s in chunk_summaries if s)
-    methods_block = "\n".join(f"- {s}" for s in methods_loss if s)
-    hyperparams_block = "\n".join(f"- {s}" for s in hyperparams if s)
-    evidence_block = "\n".join(f"- {s}" for s in evidence_notes if s)
-    github_block = "\n".join(f"- {s}" for s in _dedupe_urls(github_urls))
-
-    score_result: Dict[str, Any] = {}
-    if score_template:
-        score_prompt = _render_prompt(
-            score_template,
-            title=paper.title,
-            authors=", ".join(paper.authors),
-            abstract=paper.abstract,
-            clean_fulltext_excerpt=clean_text,
-            chunk_summaries=summary_block,
-            methods_loss=methods_block,
-            hyperparams=hyperparams_block,
-            evidence_notes=evidence_block,
-            github_urls=github_block,
-        )
-        try:
-            score_result = await _run_codex_json(score_prompt)
-        except Exception as exc:
-            raise RuntimeError(
-                f"Codex single-pass score failed for {paper.canonical_id} "
-                f"(length {len(clean_text)} chars): {exc}"
-            ) from exc
-
-    merged_urls = _dedupe_urls(_ensure_list(score_result.get("github_urls")) + github_urls)
-    tldr_default = paper.abstract[:400]
-    return {
-        "chunk_summaries": chunk_summaries,
-        "methods_loss": methods_loss,
-        "hyperparams": hyperparams,
-        "evidence_notes": evidence_notes,
-        "github_urls": merged_urls,
-        "primary_github_url": score_result.get("primary_github_url") or "",
-        "recommendation_score": score_result.get("recommendation_score", ""),
-        "recommendation_reason": score_result.get("recommendation_reason", ""),
-        "direction_tags": _ensure_list(score_result.get("direction_tags")),
-        "tldr": str(score_result.get("tldr", tldr_default)),
-        "summary": str(score_result.get("summary", tldr_default)),
+    tldr_default = paper.abstract[:400] if paper.abstract else normalized[:400]
+    result = {
+        "chunk_summaries": _ensure_list(payload.get("chunk_summaries") or payload.get("chunk_summary")),
+        "methods_loss": _ensure_list(payload.get("methods_loss")),
+        "hyperparams": _ensure_list(payload.get("hyperparams")),
+        "evidence_notes": _ensure_list(payload.get("evidence_notes")),
+        "github_urls": _dedupe_urls(_ensure_list(payload.get("github_urls"))),
+        "primary_github_url": str(payload.get("primary_github_url") or "").strip(),
+        "recommendation_score": payload.get("recommendation_score", ""),
+        "recommendation_reason": str(payload.get("recommendation_reason") or "").strip(),
+        "direction_tags": _ensure_list(payload.get("direction_tags")),
+        "tldr": str(payload.get("tldr") or tldr_default),
+        "summary": str(payload.get("summary") or tldr_default),
+        "email_body_markdown": str(payload.get("email_body_markdown") or "").strip(),
     }
+    if not result["email_body_markdown"]:
+        result["email_body_markdown"] = _render_email_analysis_markdown(
+            paper,
+            result["tldr"],
+            result["summary"],
+            result,
+        )
+    return result
+
+
+def _append_markdown_section(lines: List[str], title: str, items: List[str]) -> None:
+    if not items:
+        return
+    lines.append(title)
+    for item in items:
+        lines.append(f"- {item}")
+    lines.append("")
 
 
 def _default_email_analysis_markdown(tldr: str, summary: str) -> str:
-    tldr_text = tldr.strip() or summary.strip() or "文中未明确给出可直接提炼的 TL;DR。"
+    tldr_text = tldr.strip() or summary.strip() or "No TLDR available."
     summary_text = summary.strip() or tldr_text
     return "\n".join(
         [
-            "### A. 一句话总览",
+            "## Summary",
             f"- {summary_text}",
-            f"- TL;DR: {tldr_text}",
-            "",
-            "### B. 三个最重要创新点",
-            "- 创新点：文中未明确给出；以前怎么做：文中未明确给出；现在怎么改：文中未明确给出；为什么更好：文中未明确给出。",
-            "- 创新点：文中未明确给出；以前怎么做：文中未明确给出；现在怎么改：文中未明确给出；为什么更好：文中未明确给出。",
-            "- 创新点：文中未明确给出；以前怎么做：文中未明确给出；现在怎么改：文中未明确给出；为什么更好：文中未明确给出。",
-            "",
-            "### C. 方法白话拆解（一步一步）",
-            "- Step 1: 文中未明确给出。这一层的作用是文中未明确给出。",
-            "- Step 2: 文中未明确给出。这一层的作用是文中未明确给出。",
-            "- Step 3: 文中未明确给出。这一层的作用是文中未明确给出。",
-            "",
-            "### D. 实验结果怎么读",
-            "- 在什么任务/数据上做了实验：文中未明确给出。",
-            "- 相比基线提升了什么（方向和幅度）：文中未明确给出。",
-            "- 结果最能说明的核心价值：文中未明确给出。",
-            "",
-            "### E. 局限性与风险",
-            "- 文中未明确给出。",
-            "",
-            "### F. 给普通读者的落地理解",
-            "- 如果你是 XXX（如工程师/学生/产品经理），可以怎么用：文中未明确给出。",
-            "- 可执行建议：文中未明确给出。",
-            "",
-            "### G. 术语小词典",
-            "- 术语：文中未明确给出。",
-            "- 术语：文中未明确给出。",
-            "- 术语：文中未明确给出。",
-            "- 术语：文中未明确给出。",
-            "- 术语：文中未明确给出。",
+            f"- TLDR: {tldr_text}",
         ]
     )
+
+
+def _render_email_analysis_markdown(
+    paper: Paper,
+    tldr: str,
+    summary: str,
+    scored_result: Dict[str, Any],
+) -> str:
+    tldr_text = tldr.strip() or str(scored_result.get("tldr", "")).strip() or summary.strip() or paper.abstract.strip() or "No TLDR available."
+    summary_text = summary.strip() or str(scored_result.get("summary", "")).strip() or tldr_text
+    recommendation_score = str(scored_result.get("recommendation_score", "")).strip() or "N/A"
+    recommendation_reason = str(scored_result.get("recommendation_reason", "")).strip() or "N/A"
+    highlights = _ensure_list(scored_result.get("chunk_summaries"))
+    evidence_notes = _ensure_list(scored_result.get("evidence_notes"))
+    methods_loss = _ensure_list(scored_result.get("methods_loss"))
+    hyperparams = _ensure_list(scored_result.get("hyperparams"))
+    direction_tags = _ensure_list(scored_result.get("direction_tags"))
+    github_urls = _dedupe_urls(_ensure_list(scored_result.get("github_urls")))
+
+    lines = [
+        "## Paper",
+        f"- Title: {paper.title}",
+        f"- Authors: {', '.join(paper.authors) if paper.authors else 'N/A'}",
+        "",
+        "## Summary",
+        f"- {summary_text}",
+        f"- TLDR: {tldr_text}",
+        "",
+        "## Recommendation",
+        f"- Score: {recommendation_score}",
+        f"- Reason: {recommendation_reason}",
+        "",
+    ]
+    _append_markdown_section(lines, "## Highlights", highlights)
+    _append_markdown_section(lines, "## Evidence", evidence_notes)
+    _append_markdown_section(lines, "## Methods And Loss", methods_loss)
+    _append_markdown_section(lines, "## Hyperparameters", hyperparams)
+    _append_markdown_section(lines, "## Direction Tags", direction_tags)
+    _append_markdown_section(lines, "## Links", github_urls)
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
 
 
 async def codex_generate_email_analysis(
@@ -1752,123 +1967,21 @@ async def codex_generate_email_analysis(
     clean_text: str,
     tldr: str,
     summary: str,
+    scored_result: Optional[Dict[str, Any]] = None,
 ) -> str:
-    fallback = _default_email_analysis_markdown(tldr, summary)
-    normalized = clean_text.strip()
-    if not normalized:
-        return fallback
-
-    try:
-        template = _load_prompt(CODEX_PROMPT_MARKDOWN_PATH)
-    except Exception as exc:
-        _log("WARN", f"Email analysis prompt unavailable ({CODEX_PROMPT_MARKDOWN_PATH}): {exc}")
-        return fallback
-
-    prompt = _render_prompt(
-        template,
-        title=paper.title,
-        authors=", ".join(paper.authors),
-        abstract=paper.abstract,
-        clean_text=normalized,
-        chunk=normalized,
-    )
-    try:
-        payload = await _run_codex_json(prompt)
-    except Exception as exc:
-        _log("WARN", f"Email analysis codex failed for {paper.canonical_id}, fallback to default: {exc}")
-        return fallback
-
-    markdown = str(payload.get("email_body_markdown") or payload.get("markdown") or "").strip()
-    if not markdown:
-        _log("WARN", f"Email analysis empty for {paper.canonical_id}, fallback to default.")
-        return fallback
-    return markdown
-
-
-def _summarize_tex_file(path: Path) -> Dict[str, Any]:
-    try:
-        content = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return {
-            "path": str(path),
-            "size": 0,
-            "has_documentclass": False,
-            "has_begin_document": False,
-            "include_count": 0,
-        }
-
-    return {
-        "path": str(path),
-        "size": path.stat().st_size,
-        "has_documentclass": "\\documentclass" in content,
-        "has_begin_document": "\\begin{document}" in content,
-        "include_count": len(re.findall(r"\\(input|include)\\{", content)),
-    }
-
-
-def _default_main_tex(tex_files: List[Path]) -> Optional[Path]:
-    if not tex_files:
-        return None
-    scored: List[Tuple[int, int, Path]] = []
-    for path in tex_files:
-        info = _summarize_tex_file(path)
-        rule_score = 0
-        if info["has_documentclass"]:
-            rule_score += 4
-        if info["has_begin_document"]:
-            rule_score += 4
-        rule_score += min(5, int(info["include_count"]))
-        scored.append((rule_score, int(info["size"]), path))
-    scored.sort(reverse=True, key=lambda x: (x[0], x[1]))
-    return scored[0][2]
-
-
-async def codex_select_main_tex(tex_files: List[Path]) -> Path:
-    if not tex_files:
-        raise RuntimeError("No .tex files available for main file selection")
-
-    try:
-        prompt_template = _load_prompt(CODEX_PROMPT_MAIN_PATH)
-    except Exception as exc:
-        fallback = _default_main_tex(tex_files)
-        if fallback is None:
-            raise RuntimeError(f"Main TeX fallback failed: {exc}") from exc
-        return fallback
-
-    summaries = [_summarize_tex_file(path) for path in tex_files]
-    summary_lines = [
-        (
-            f"- path: {item['path']}\n"
-            f"  size: {item['size']}\n"
-            f"  has_documentclass: {item['has_documentclass']}\n"
-            f"  has_begin_document: {item['has_begin_document']}\n"
-            f"  include_count: {item['include_count']}"
-        )
-        for item in summaries
-    ]
-    prompt = _render_prompt(
-        prompt_template,
-        candidates="\n".join(summary_lines),
-    )
-    try:
-        result = await _run_codex_json(prompt)
-        selected = str(result.get("main_tex") or "").strip()
-    except Exception as exc:
-        _log("WARN", f"Codex main-tex selection failed: {exc}")
-        selected = ""
-    if selected:
-        selected_path = Path(selected)
-        if selected_path in tex_files:
-            return selected_path
-    fallback = _default_main_tex(tex_files)
-    if fallback is None:
-        raise RuntimeError("Unable to select main tex file")
-    return fallback
-
+    _ = clean_text
+    if scored_result:
+        existing = str(scored_result.get("email_body_markdown") or "").strip()
+        if existing:
+            return existing
+        return _render_email_analysis_markdown(paper, tldr, summary, scored_result)
+    return _default_email_analysis_markdown(tldr, summary)
 
 async def save_to_obsidian(
     paper: Paper,
-    latex_text: str,
+    source_text: str,
+    source_path: str,
+    source_backend: str,
     codex_result: Dict[str, Any],
     repro_tier: str,
     scanned_repos: List[Dict[str, str]],
@@ -1900,6 +2013,8 @@ async def save_to_obsidian(
             f"- Authors: {', '.join(paper.authors)}",
             f"- Source Tags: {', '.join(sorted(paper.source_tags))}",
             f"- URL: {paper.url}",
+            f"- Source Backend: {source_backend or 'unknown'}",
+            f"- Source Path: {source_path or 'N/A'}",
             f"- Reproducibility: {repro_tier}",
             f"- Recommendation Score: {recommendation_score}",
             f"- Recommendation Reason: {recommendation_reason}",
@@ -1923,8 +2038,8 @@ async def save_to_obsidian(
             "## Scanned Repos",
             repos_block,
             "",
-            "## Full LaTeX Source",
-            latex_text,
+            "## Source Text",
+            source_text,
         ]
     )
 
@@ -1940,6 +2055,7 @@ async def notify(
     recommendation_score: Any,
     recommendation_reason: str,
     run_dir: Path,
+    prepared_pdf_path: str = "",
 ) -> None:
     if not EMAIL_RECIPIENTS:
         _log("WARN", "Email recipients not configured; skipping notification.")
@@ -1949,7 +2065,10 @@ async def notify(
     pdf_url = _resolve_paper_pdf_url(paper)
     attachments: List[str] = []
     attachment_notice = ""
-    if pdf_url:
+    prepared_pdf = Path(prepared_pdf_path).expanduser() if prepared_pdf_path else None
+    if prepared_pdf is not None and prepared_pdf.exists():
+        attachments.append(str(prepared_pdf))
+    elif pdf_url:
         attachment_path = run_dir / "attachments" / f"{safe_id}.pdf"
         try:
             downloaded = await run_sync(
@@ -1960,9 +2079,9 @@ async def notify(
             attachments.append(str(downloaded))
         except Exception as exc:
             _log("WARN", f"PDF attachment download failed for {paper.canonical_id}: {exc}")
-            attachment_notice = f"PDF附件下载失败，请使用链接访问：{pdf_url}"
+            attachment_notice = f"PDF attachment download failed; use the original link instead: {pdf_url}"
     else:
-        attachment_notice = "未找到可用 PDF 链接，邮件未附带 PDF。"
+        attachment_notice = "No PDF link available, so the email does not include a PDF attachment."
 
     score_text = str(recommendation_score).strip()
     if not score_text:
@@ -1973,21 +2092,21 @@ async def notify(
     analysis_block = email_analysis_markdown.strip() or _default_email_analysis_markdown(tldr, tldr)
     subject = f"{EMAIL_SUBJECT_PREFIX}{paper.title}"
     body_parts = [
-        "## 元信息",
-        f"标题: {paper.title}",
-        f"作者: {', '.join(paper.authors)}",
+        "## Metadata",
+        f"Title: {paper.title}",
+        f"Authors: {', '.join(paper.authors)}",
         f"TL;DR: {tldr}",
-        f"推荐理由: {recommendation_reason or 'N/A'}",
-        f"评分: {score_text}",
-        f"复现分级: {repro_tier}",
-        f"论文链接: {paper.url or 'N/A'}",
-        f"PDF链接: {pdf_url or 'N/A'}",
+        f"Recommendation reason: {recommendation_reason or 'N/A'}",
+        f"Score: {score_text}",
+        f"Reproducibility: {repro_tier}",
+        f"Paper URL: {paper.url or 'N/A'}",
+        f"PDF URL: {pdf_url or 'N/A'}",
         "",
-        "## Codex 文献解读",
+        "## Codex Analysis",
         analysis_block,
     ]
     if attachment_notice:
-        body_parts.extend(["", f"提示: {attachment_notice}"])
+        body_parts.extend(["", f"Note: {attachment_notice}"])
     body = "\n".join(body_parts)
     body_path = run_dir / f"email_body_{safe_id}.txt"
     body_path.write_text(body, encoding="utf-8")
@@ -2066,7 +2185,7 @@ async def _process_paper(
             "WARN",
             f"Whitelist exception for {paper.canonical_id}, skip scoring: {prepared.clean_exception_reason}",
         )
-        tldr = paper.abstract[:400] if paper.abstract else "Whitelisted paper with clean-fulltext failure."
+        tldr = paper.abstract[:400] if paper.abstract else "Whitelisted paper with source-preparation failure."
         codex_result = {
             "chunk_summaries": [],
             "methods_loss": [],
@@ -2075,14 +2194,15 @@ async def _process_paper(
             "github_urls": [],
             "primary_github_url": "",
             "recommendation_score": "N/A",
-            "recommendation_reason": "author_whitelist_exception_clean_failed",
+            "recommendation_reason": "author_whitelist_exception_source_failed",
             "direction_tags": ["whitelist-exception"],
             "tldr": tldr,
             "summary": tldr,
+            "email_body_markdown": _default_email_analysis_markdown(tldr, tldr),
         }
     else:
         _log("INFO", f"Processing paper: {paper.canonical_id} | {paper.title}")
-        codex_result = await codex_process_paper(paper, prepared.clean_text)
+        codex_result = await codex_process_paper(paper, prepared.source_text, prepared.source_backend)
 
     repro_tier, scanned_repos = await check_reproducibility(
         paper,
@@ -2092,7 +2212,9 @@ async def _process_paper(
 
     await save_to_obsidian(
         paper,
-        prepared.latex_text,
+        prepared.source_text,
+        prepared.source_path,
+        prepared.source_backend,
         codex_result,
         repro_tier,
         scanned_repos,
@@ -2101,9 +2223,10 @@ async def _process_paper(
     tldr = codex_result.get("tldr", "")
     email_analysis_markdown = await codex_generate_email_analysis(
         paper=paper,
-        clean_text=prepared.clean_text,
+        clean_text=prepared.source_text,
         tldr=tldr,
         summary=str(codex_result.get("summary", "")),
+        scored_result=codex_result,
     )
     await notify(
         paper,
@@ -2113,6 +2236,7 @@ async def _process_paper(
         codex_result.get("recommendation_score", ""),
         codex_result.get("recommendation_reason", ""),
         run_dir,
+        prepared.pdf_path,
     )
 
     return {paper.canonical_id, paper.paper_id}
@@ -2144,129 +2268,55 @@ async def _prepare_paper(
     )
 
     try:
-        latex_result = await fetch_latex_source(paper)
+        mineru_result = await prepare_pdf_markdown(paper)
     except Exception as exc:
-        if whitelisted:
-            reason = f"latex_fetch_failed:{exc}"
-            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
-            return PreparedPaper(
-                paper=paper,
-                whitelisted=whitelisted,
-                super_whitelist_hit=super_hit,
-                super_whitelist_hit_reasons=super_hit_reasons,
-                citation_velocity=citation_velocity,
-                latex_text="",
-                used_files=[],
-                clean_text="",
-                stage1_score=stage1_score,
-                topic_score=topic_score,
-                coverage_score=coverage_score,
-                clean_exception=True,
-                clean_exception_reason=reason,
-            )
-        _log("ERROR", f"LaTeX source fetch failed for {paper.canonical_id}: {exc}")
-        return None
+        if _is_missing_mineru_key_error(exc):
+            raise
+        _log("WARN", f"MinerU prepare failed for {paper.canonical_id}, falling back to LaTeX: {exc}")
+        return await _prepare_from_latex_fallback(
+            paper,
+            whitelisted,
+            super_hit,
+            super_hit_reasons,
+            citation_velocity,
+            stage1_score,
+            topic_score,
+            coverage_score,
+        )
 
-    tex_path = latex_result.get("tex_path") or ""
-    tex_files = [Path(p) for p in latex_result.get("tex_files", [])]
-    try:
-        main_tex = await codex_select_main_tex(tex_files)
-        tex_path = str(main_tex)
-    except Exception as exc:
-        if whitelisted:
-            reason = f"main_tex_selection_failed:{exc}"
-            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
-            return PreparedPaper(
-                paper=paper,
-                whitelisted=whitelisted,
-                super_whitelist_hit=super_hit,
-                super_whitelist_hit_reasons=super_hit_reasons,
-                citation_velocity=citation_velocity,
-                latex_text="",
-                used_files=[],
-                clean_text="",
-                stage1_score=stage1_score,
-                topic_score=topic_score,
-                coverage_score=coverage_score,
-                clean_exception=True,
-                clean_exception_reason=reason,
-            )
-        _log("ERROR", f"Main-tex selection failed for {paper.canonical_id}: {exc}")
+    status = str(mineru_result.get("status", "")).strip().lower()
+    if status == "pending":
+        _log("INFO", f"MinerU batch still pending for {paper.canonical_id}: {mineru_result.get('batch_id', '')}")
         return None
-    if not tex_path:
-        reason = "no_tex_file"
-        if whitelisted:
-            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
-            return PreparedPaper(
-                paper=paper,
-                whitelisted=whitelisted,
-                super_whitelist_hit=super_hit,
-                super_whitelist_hit_reasons=super_hit_reasons,
-                citation_velocity=citation_velocity,
-                latex_text="",
-                used_files=[],
-                clean_text="",
-                stage1_score=stage1_score,
-                topic_score=topic_score,
-                coverage_score=coverage_score,
-                clean_exception=True,
-                clean_exception_reason=reason,
-            )
-        _log("WARN", f"No .tex file found for {paper.canonical_id}")
-        return None
+    if status != "done":
+        _log("WARN", f"MinerU returned status={status or 'unknown'} for {paper.canonical_id}, falling back to LaTeX")
+        return await _prepare_from_latex_fallback(
+            paper,
+            whitelisted,
+            super_hit,
+            super_hit_reasons,
+            citation_velocity,
+            stage1_score,
+            topic_score,
+            coverage_score,
+        )
 
-    try:
-        latex_text, used_files = latex_reader.read_latex_tree(Path(tex_path))
-    except Exception as exc:
-        if whitelisted:
-            reason = f"latex_read_failed:{exc}"
-            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
-            return PreparedPaper(
-                paper=paper,
-                whitelisted=whitelisted,
-                super_whitelist_hit=super_hit,
-                super_whitelist_hit_reasons=super_hit_reasons,
-                citation_velocity=citation_velocity,
-                latex_text="",
-                used_files=[],
-                clean_text="",
-                stage1_score=stage1_score,
-                topic_score=topic_score,
-                coverage_score=coverage_score,
-                clean_exception=True,
-                clean_exception_reason=reason,
-            )
-        _log("ERROR", f"LaTeX read failed for {paper.canonical_id}: {exc}")
-        return None
-
-    _log(
-        "INFO",
-        f"LaTeX main file: {tex_path} ({len(latex_text)} chars, {len(used_files)} files)",
-    )
-
-    try:
-        clean_text = await clean_latex_fulltext(paper, latex_text)
-    except Exception as exc:
-        if whitelisted:
-            reason = f"clean_fulltext_failed:{exc}"
-            _log("WARN", f"Whitelist exception {paper.canonical_id}: {reason}")
-            return PreparedPaper(
-                paper=paper,
-                whitelisted=whitelisted,
-                super_whitelist_hit=super_hit,
-                super_whitelist_hit_reasons=super_hit_reasons,
-                citation_velocity=citation_velocity,
-                latex_text=latex_text,
-                used_files=[str(p) for p in used_files],
-                clean_text="",
-                stage1_score=stage1_score,
-                topic_score=topic_score,
-                coverage_score=coverage_score,
-                clean_exception=True,
-                clean_exception_reason=reason,
-            )
-        _log("ERROR", f"Fulltext cleaning failed for {paper.canonical_id}: {exc}")
-        return None
+    source_text = str(mineru_result.get("markdown_text") or "")
+    source_path = str(mineru_result.get("markdown_path") or "")
+    pdf_path = str(mineru_result.get("pdf_path") or "")
+    mineru_batch_id = str(mineru_result.get("batch_id") or "")
+    if not source_text.strip():
+        _log("WARN", f"MinerU markdown empty for {paper.canonical_id}, falling back to LaTeX")
+        return await _prepare_from_latex_fallback(
+            paper,
+            whitelisted,
+            super_hit,
+            super_hit_reasons,
+            citation_velocity,
+            stage1_score,
+            topic_score,
+            coverage_score,
+        )
 
     return PreparedPaper(
         paper=paper,
@@ -2274,9 +2324,11 @@ async def _prepare_paper(
         super_whitelist_hit=super_hit,
         super_whitelist_hit_reasons=super_hit_reasons,
         citation_velocity=citation_velocity,
-        latex_text=latex_text,
-        used_files=[str(p) for p in used_files],
-        clean_text=clean_text,
+        source_text=source_text,
+        source_path=source_path,
+        source_backend="mineru_markdown",
+        pdf_path=pdf_path,
+        mineru_batch_id=mineru_batch_id,
         stage1_score=stage1_score,
         topic_score=topic_score,
         coverage_score=coverage_score,
@@ -2399,8 +2451,10 @@ async def run_pipeline(date_window: Optional[DateWindow] = None) -> None:
         prepared: List[PreparedPaper] = []
         prepare_lock = anyio.Lock()
         prepare_semaphore = anyio.Semaphore(max(1, PAPER_EVAL_CONCURRENCY))
+        fatal_prepare_error: Optional[BaseException] = None
 
         async def _prepare_worker(paper: Paper) -> None:
+            nonlocal fatal_prepare_error
             async with prepare_semaphore:
                 try:
                     key = paper.canonical_id or paper.paper_id
@@ -2412,6 +2466,10 @@ async def run_pipeline(date_window: Optional[DateWindow] = None) -> None:
                         stage1_scores=scores,
                     )
                 except Exception as exc:
+                    if _is_missing_mineru_key_error(exc):
+                        _log("ERROR", f"Fatal MinerU configuration error for {paper.canonical_id}: {exc}")
+                        fatal_prepare_error = exc
+                        return
                     _log("ERROR", f"Unexpected prepare failure for {paper.canonical_id}: {exc}")
                     item = None
                 if item is not None:
@@ -2421,6 +2479,9 @@ async def run_pipeline(date_window: Optional[DateWindow] = None) -> None:
         async with anyio.create_task_group() as tg:
             for paper in prefiltered:
                 tg.start_soon(_prepare_worker, paper)
+
+        if fatal_prepare_error is not None:
+            raise fatal_prepare_error
 
         whitelist_exceptions = [item for item in prepared if item.clean_exception]
         if whitelist_exceptions:

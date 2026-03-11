@@ -1,5 +1,7 @@
-import io
+﻿import io
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 
@@ -61,6 +63,25 @@ class TestArxivMcpCharacterization(unittest.TestCase):
             out = arxiv_mcp.source_fetch("2602.10177", output_dir="output/latex")
         mocked.assert_called_once()
         self.assertEqual(fake, out)
+
+    def test_source_fetch_reuses_existing_extraction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_root = Path(tmpdir)
+            cached_dir = output_root / "2602.10177"
+            cached_dir.mkdir(parents=True, exist_ok=True)
+            (cached_dir / "2602.10177.tar.gz").write_bytes(b"fake")
+            main_tex = cached_dir / "main.tex"
+            main_tex.write_text("\\begin{document}\nhello\n", encoding="utf-8")
+
+            with patch.object(
+                arxiv_mcp,
+                "_read_with_retries",
+                side_effect=AssertionError("should not download when cache exists"),
+            ):
+                out = arxiv_mcp.source_fetch("2602.10177", output_dir=tmpdir)
+
+        self.assertEqual(str(main_tex), out["tex_path"])
+        self.assertEqual([str(main_tex)], out["tex_files"])
 
     def test_retry_branch_on_transient_http_error(self) -> None:
         http_err = HTTPError("http://x", 500, "err", {}, io.BytesIO(b""))

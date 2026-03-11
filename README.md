@@ -22,7 +22,7 @@ What the project does:
 
 - Discover papers from arXiv keyword queries, HF daily papers, and HF trending sources.
 - Apply stage-1 keyword/topic heuristics and downstream candidate scoring.
-- Pull LaTeX sources when available, clean text, and generate analysis artifacts.
+- Prefer PDF download plus MinerU Markdown extraction, then generate single-pass analysis artifacts; fall back to LaTeX only when MinerU exhausts retries.
 - Optionally send notifications and write notes into an Obsidian vault.
 
 What the project does not do by itself:
@@ -51,12 +51,14 @@ If you only want the runtime dependencies, `requirements.txt` is the smaller ins
 3. Fill in local-only values such as recipients, vault path, and credentials.
 4. Export any required environment variables before running.
 
+If you are upgrading an older local config, remove deprecated keys such as `seen_cache_path`, `codex_chunk_chars`, `codex_chunk_overlap`, and the legacy `codex_prompt_*` TeX prompt paths to avoid startup warnings.
+
 Recommended environment variables:
 
 - `SEMANTIC_SCHOLAR_API_KEY`
 - `GITHUB_TOKEN`
 - `EMAIL_ACCOUNT_NAME` when using MCP email delivery
-- Optional: `AIRESEARCH_CONFIG`, `AIRESEARCH_MCP_CONFIG`, `OBSIDIAN_VAULT`
+- Optional: `AIRESEARCH_CONFIG`, `AIRESEARCH_MCP_CONFIG`, `OBSIDIAN_VAULT`, `MINERU_API_KEY`
 
 配置模板是公开文件；`config.local.yaml` 与 `mcp.local.json` 是本地文件，不应提交到 GitHub。
 

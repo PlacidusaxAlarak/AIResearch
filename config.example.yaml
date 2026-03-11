@@ -3,9 +3,6 @@
 # Paths / state
 state_dir: "state"
 output_root: "output"
-# Deprecated: kept for backward compatibility only, ignored because history sent-paper dedupe is disabled.
-seen_cache_path: "state/seen_papers.json"
-
 # Notification
 email_recipients:
   - "you@example.com"
@@ -49,23 +46,21 @@ candidate_score_weights:
 
 # Codex runtime
 codex_timeout_sec: 600
-# Deprecated: kept for backward compatibility only, ignored in single-pass mode.
-codex_chunk_chars: 12000
-# Deprecated: kept for backward compatibility only, ignored in single-pass mode.
-codex_chunk_overlap: 800
 codex_skip_git_repo_check: true
 codex_use_search: false
 codex_max_concurrency: 8
 paper_eval_concurrency: 8
 github_scan_max: 3
 
+# MinerU runtime
+mineru_poll_interval_sec: 5
+mineru_per_run_timeout_sec: 600
+mineru_max_attempts: 3
+mineru_backoff_base_sec: 2
+
 # Prompt templates
-codex_prompt_chunk_path: "prompts/codex_tex_chunk_extract.txt"
-codex_prompt_score_path: "prompts/codex_final_score.txt"
-codex_prompt_main_path: "prompts/codex_select_main_tex.txt"
+codex_prompt_paper_analysis_path: "prompts/codex_paper_analysis.txt"
 codex_prompt_candidate_path: "prompts/codex_candidate_score.txt"
-codex_prompt_clean_path: "prompts/codex_clean_fulltext.txt"
-codex_prompt_markdown_path: "prompts/codex_markdown_detail.txt"
 
 # Whitelists
 whitelist_path: "configs/whitelist_authors.yaml"

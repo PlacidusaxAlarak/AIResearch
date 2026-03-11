@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -24,149 +26,212 @@ def _build_paper() -> orch_impl.Paper:
 
 
 def _fake_prompt_loader(path):
-    if path == orch_impl.CODEX_PROMPT_CHUNK_PATH:
-        return "Chunk prompt\nTitle: {title}\nText:\n{chunk}\n"
-    if path == orch_impl.CODEX_PROMPT_SCORE_PATH:
+    if path == orch_impl.CODEX_PROMPT_PAPER_ANALYSIS_PATH:
         return (
-            "Score prompt\nTitle: {title}\nExcerpt:\n{clean_fulltext_excerpt}\n"
-            "Summaries:\n{chunk_summaries}\n"
-        )
-    if path == orch_impl.CODEX_PROMPT_CLEAN_PATH:
-        return "Clean prompt\nFull text:\n{chunk}\n"
-    if path == orch_impl.CODEX_PROMPT_MARKDOWN_PATH:
-        return (
-            "Email analysis prompt\nTitle: {title}\nAuthors: {authors}\n"
-            "Abstract:\n{abstract}\nCleaned:\n{clean_text}\nCompat:\n{chunk}\n"
+            "Paper analysis prompt\n"
+            "Title: {title}\n"
+            "Authors: {authors}\n"
+            "Abstract:\n{abstract}\n"
+            "URL: {url}\n"
+            "Markdown:\n{source_markdown}\n"
         )
     raise RuntimeError(f"Unexpected prompt path in test: {path}")
 
 
 class TestOrchestratorSinglePassCharacterization(unittest.TestCase):
-    def test_clean_latex_fulltext_single_pass_uses_full_input(self) -> None:
+    def test_codex_process_paper_uses_single_analysis_prompt(self) -> None:
         paper = _build_paper()
-        latex_text = "LATEX-" + ("A" * 13050) + "-TAIL"
-        run_mock = AsyncMock(return_value={"clean_text": "cleaned content"})
-        with (
-            patch.object(orch_impl, "_load_prompt", side_effect=_fake_prompt_loader),
-            patch.object(orch_impl, "_run_codex_json", run_mock),
-        ):
-            out = anyio.run(orch_impl.clean_latex_fulltext, paper, latex_text)
+        source_markdown = "# Heading\n\nParsed paper markdown."
+        run_mock = AsyncMock(
+            return_value={
+                "chunk_summaries": ["summary item"],
+                "methods_loss": ["loss item"],
+                "hyperparams": ["lr=1e-4"],
+                "evidence_notes": ["ablation included"],
+                "github_urls": ["https://github.com/acme/repo"],
+                "primary_github_url": "https://github.com/acme/repo",
+                "recommendation_score": 8,
+                "recommendation_reason": "Strong evidence",
+                "direction_tags": ["inference-scaling"],
+                "tldr": "Short summary",
+                "summary": "Longer summary",
+                "email_body_markdown": "## Email\n- already rendered",
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir) / "state"
+            with (
+                patch.object(orch_impl, "_load_prompt", side_effect=_fake_prompt_loader),
+                patch.object(orch_impl, "_run_codex_json", run_mock),
+                patch.object(orch_impl, "STATE_DIR", state_dir),
+            ):
+                out = anyio.run(orch_impl.codex_process_paper, paper, source_markdown)
 
-        self.assertEqual("cleaned content", out)
         self.assertEqual(1, run_mock.await_count)
         sent_prompt = run_mock.await_args_list[0].args[0]
-        self.assertIn(latex_text, sent_prompt)
-
-    def test_codex_process_paper_single_pass_extract_and_score(self) -> None:
-        paper = _build_paper()
-        clean_text = "CLEAN-" + ("B" * 41050) + "-END"
-        run_mock = AsyncMock(
-            side_effect=[
-                {
-                    "chunk_summary": ["summary item"],
-                    "methods_loss": ["loss item"],
-                    "hyperparams": ["lr=1e-4"],
-                    "evidence_notes": ["ablation included"],
-                    "github_urls": ["https://github.com/acme/repo"],
-                },
-                {
-                    "github_urls": ["https://github.com/acme/repo"],
-                    "primary_github_url": "https://github.com/acme/repo",
-                    "recommendation_score": 8,
-                    "recommendation_reason": "Strong evidence",
-                    "direction_tags": ["inference-scaling"],
-                    "tldr": "Short summary",
-                    "summary": "Longer summary",
-                },
-            ]
-        )
-        with (
-            patch.object(orch_impl, "_load_prompt", side_effect=_fake_prompt_loader),
-            patch.object(orch_impl, "_run_codex_json", run_mock),
-        ):
-            out = anyio.run(orch_impl.codex_process_paper, paper, clean_text)
-
-        self.assertEqual(2, run_mock.await_count)
-        extract_prompt = run_mock.await_args_list[0].args[0]
-        score_prompt = run_mock.await_args_list[1].args[0]
-        self.assertIn(clean_text, extract_prompt)
-        self.assertIn(clean_text, score_prompt)
+        self.assertIn(source_markdown, sent_prompt)
         self.assertEqual(8, out["recommendation_score"])
-        self.assertEqual("https://github.com/acme/repo", out["primary_github_url"])
-        self.assertEqual(["summary item"], out["chunk_summaries"])
+        self.assertEqual("## Email\n- already rendered", out["email_body_markdown"])
 
-    def test_codex_process_paper_extract_failure_is_strict(self) -> None:
+    def test_codex_process_paper_reuses_cached_single_result(self) -> None:
         paper = _build_paper()
-        clean_text = "CLEAN-" + ("X" * 15000)
-        run_mock = AsyncMock(side_effect=RuntimeError("extract boom"))
-        with (
-            patch.object(orch_impl, "_load_prompt", side_effect=_fake_prompt_loader),
-            patch.object(orch_impl, "_run_codex_json", run_mock),
-        ):
-            with self.assertRaisesRegex(RuntimeError, "single-pass extract failed"):
-                anyio.run(orch_impl.codex_process_paper, paper, clean_text)
-
-    def test_codex_process_paper_score_failure_is_strict(self) -> None:
-        paper = _build_paper()
-        clean_text = "CLEAN-" + ("Y" * 15000)
+        source_markdown = "# Heading\n\nParsed paper markdown."
         run_mock = AsyncMock(
-            side_effect=[
-                {
-                    "chunk_summary": ["summary item"],
-                    "methods_loss": [],
-                    "hyperparams": [],
-                    "evidence_notes": [],
-                    "github_urls": [],
-                },
-                RuntimeError("score boom"),
-            ]
+            return_value={
+                "chunk_summaries": ["summary item"],
+                "methods_loss": ["loss item"],
+                "hyperparams": ["lr=1e-4"],
+                "evidence_notes": ["ablation included"],
+                "github_urls": ["https://github.com/acme/repo"],
+                "primary_github_url": "https://github.com/acme/repo",
+                "recommendation_score": 8,
+                "recommendation_reason": "Strong evidence",
+                "direction_tags": ["inference-scaling"],
+                "tldr": "Short summary",
+                "summary": "Longer summary",
+                "email_body_markdown": "## Email\n- cached",
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir) / "state"
+            with (
+                patch.object(orch_impl, "_load_prompt", side_effect=_fake_prompt_loader),
+                patch.object(orch_impl, "_run_codex_json", run_mock),
+                patch.object(orch_impl, "STATE_DIR", state_dir),
+            ):
+                first = anyio.run(orch_impl.codex_process_paper, paper, source_markdown)
+                second = anyio.run(orch_impl.codex_process_paper, paper, source_markdown)
+
+        self.assertEqual(first, second)
+        self.assertEqual(1, run_mock.await_count)
+
+    def test_prepare_paper_uses_pdf_markdown_not_latex_helpers(self) -> None:
+        paper = _build_paper()
+        prepare_mock = AsyncMock(
+            return_value={
+                "status": "done",
+                "markdown_path": "G:/AIResearch/output/mineru/2602.99999/extract/content.md",
+                "pdf_path": "G:/AIResearch/output/mineru/2602.99999/source.pdf",
+                "batch_id": "batch-123",
+                "markdown_text": "# Parsed Markdown",
+            }
         )
         with (
-            patch.object(orch_impl, "_load_prompt", side_effect=_fake_prompt_loader),
-            patch.object(orch_impl, "_run_codex_json", run_mock),
+            patch.object(orch_impl, "passes_filters", AsyncMock(return_value=(True, 0.0, False))),
+            patch.object(orch_impl, "prepare_pdf_markdown", prepare_mock, create=True),
+            patch.object(orch_impl, "fetch_latex_source", side_effect=AssertionError("latex fetch should not be used"), create=True),
+            patch.object(orch_impl, "codex_select_main_tex", side_effect=AssertionError("main tex should not be used"), create=True),
+            patch.object(orch_impl, "clean_latex_fulltext", side_effect=AssertionError("latex cleaning should not be used"), create=True),
         ):
-            with self.assertRaisesRegex(RuntimeError, "single-pass score failed"):
-                anyio.run(orch_impl.codex_process_paper, paper, clean_text)
+            prepared = anyio.run(orch_impl._prepare_paper, paper, set(), {})
 
-    def test_codex_generate_email_analysis_uses_full_clean_text(self) -> None:
+        self.assertIsNotNone(prepared)
+        assert prepared is not None
+        self.assertEqual("# Parsed Markdown", prepared.source_markdown)
+        self.assertEqual("batch-123", prepared.mineru_batch_id)
+        self.assertTrue(prepared.source_markdown_path.endswith("content.md"))
+        self.assertTrue(prepared.pdf_path.endswith("source.pdf"))
+        prepare_mock.assert_awaited_once()
+
+    def test_prepare_paper_skips_pending_mineru_job(self) -> None:
         paper = _build_paper()
-        clean_text = "CLEAN-" + ("Z" * 36000) + "-END"
-        expected = "### 创新点\n- A\n\n### 哪里值得看\n- B\n\n### 文章概括\n- C"
-        run_mock = AsyncMock(return_value={"email_body_markdown": expected})
         with (
-            patch.object(orch_impl, "_load_prompt", side_effect=_fake_prompt_loader),
-            patch.object(orch_impl, "_run_codex_json", run_mock),
+            patch.object(orch_impl, "passes_filters", AsyncMock(return_value=(True, 0.0, False))),
+            patch.object(
+                orch_impl,
+                "prepare_pdf_markdown",
+                AsyncMock(
+                    return_value={
+                        "status": "pending",
+                        "batch_id": "batch-pending",
+                        "pdf_path": "G:/AIResearch/output/mineru/2602.99999/source.pdf",
+                    }
+                ),
+                create=True,
+            ),
         ):
-            out = anyio.run(
-                orch_impl.codex_generate_email_analysis,
+            prepared = anyio.run(orch_impl._prepare_paper, paper, set(), {})
+
+        self.assertIsNone(prepared)
+
+    def test_prepare_paper_falls_back_to_latex_after_mineru_failure(self) -> None:
+        paper = _build_paper()
+        with (
+            patch.object(orch_impl, "passes_filters", AsyncMock(return_value=(True, 0.0, False))),
+            patch.object(
+                orch_impl,
+                "prepare_pdf_markdown",
+                AsyncMock(side_effect=RuntimeError("MinerU attempts exhausted")),
+                create=True,
+            ),
+            patch.object(
+                orch_impl,
+                "fetch_latex_source",
+                AsyncMock(
+                    return_value={
+                        "tex_path": "G:/AIResearch/output/latex/2602.99999/main.tex",
+                        "tex_files": ["G:/AIResearch/output/latex/2602.99999/main.tex"],
+                    }
+                ),
+            ),
+            patch.object(
+                orch_impl.latex_reader,
+                "read_latex_tree",
+                return_value=("Fallback LaTeX Source", ["G:/AIResearch/output/latex/2602.99999/main.tex"]),
+            ),
+        ):
+            prepared = anyio.run(orch_impl._prepare_paper, paper, set(), {})
+
+        self.assertIsNotNone(prepared)
+        assert prepared is not None
+        self.assertEqual("latex_fallback", prepared.source_backend)
+        self.assertEqual("Fallback LaTeX Source", prepared.source_markdown)
+        self.assertTrue(prepared.source_path.endswith("main.tex"))
+
+    def test_run_pipeline_fails_when_mineru_key_missing(self) -> None:
+        paper = _build_paper()
+        window = orch_impl.DateWindow(
+            start_date=datetime(2026, 2, 1, tzinfo=timezone.utc).date(),
+            end_date=datetime(2026, 2, 2, tzinfo=timezone.utc).date(),
+        )
+
+        with (
+            patch.object(orch_impl, "load_whitelist", return_value=set()),
+            patch.object(orch_impl, "load_super_whitelist", return_value={}),
+            patch.object(orch_impl, "discover_papers", AsyncMock(return_value=[paper])),
+            patch.object(orch_impl, "apply_stage1_prefilter", side_effect=lambda entries: entries),
+            patch.object(
+                orch_impl,
+                "_prepare_paper",
+                AsyncMock(side_effect=RuntimeError("MINERU_API_KEY environment variable is required")),
+            ),
+            patch.object(orch_impl, "PAPER_EVAL_CONCURRENCY", 1),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "MINERU_API_KEY"):
+                anyio.run(orch_impl.run_pipeline, window)
+
+    def test_codex_generate_email_analysis_uses_existing_scored_markdown_without_codex(self) -> None:
+        paper = _build_paper()
+        scored_result = {
+            "email_body_markdown": "## Email\n- rendered once",
+        }
+        run_mock = AsyncMock(side_effect=AssertionError("email analysis should not call codex"))
+
+        async def _invoke():
+            return await orch_impl.codex_generate_email_analysis(
                 paper,
-                clean_text,
+                "source markdown is not needed here",
                 "Short summary",
                 "Long summary",
+                scored_result=scored_result,
             )
 
-        self.assertEqual(expected, out)
-        self.assertEqual(1, run_mock.await_count)
-        sent_prompt = run_mock.await_args_list[0].args[0]
-        self.assertIn(clean_text, sent_prompt)
+        with patch.object(orch_impl, "_run_codex_json", run_mock):
+            out = anyio.run(_invoke)
 
-    def test_apply_config_chunk_params_are_deprecated_and_ignored(self) -> None:
-        with (
-            patch.object(orch_impl, "CODEX_CHUNK_CHARS", 12000),
-            patch.object(orch_impl, "CODEX_CHUNK_OVERLAP", 800),
-            patch.object(orch_impl, "_log") as log_mock,
-        ):
-            orch_impl.apply_config({"codex_chunk_chars": 3000, "codex_chunk_overlap": 100})
-            self.assertEqual(12000, orch_impl.CODEX_CHUNK_CHARS)
-            self.assertEqual(800, orch_impl.CODEX_CHUNK_OVERLAP)
-
-        warn_messages = [
-            call.args[1]
-            for call in log_mock.call_args_list
-            if len(call.args) >= 2 and call.args[0] == "WARN"
-        ]
-        self.assertTrue(any("codex_chunk_chars is deprecated and ignored" in msg for msg in warn_messages))
-        self.assertTrue(any("codex_chunk_overlap is deprecated and ignored" in msg for msg in warn_messages))
+        self.assertEqual("## Email\n- rendered once", out)
+        self.assertEqual(0, run_mock.await_count)
 
 
 if __name__ == "__main__":

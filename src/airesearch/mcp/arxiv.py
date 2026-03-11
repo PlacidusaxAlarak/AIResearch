@@ -166,10 +166,35 @@ def _select_main_tex(tex_files: List[Path]) -> Path | None:
     return max(main_candidates, key=lambda path: path.stat().st_size)
 
 
+def _existing_source_payload(output_dir: Path, archive_path: Path) -> Dict[str, object] | None:
+    if not output_dir.exists() or not archive_path.exists():
+        return None
+
+    tex_files = sorted(output_dir.rglob("*.tex"))
+    if not tex_files:
+        return None
+
+    main_tex = _select_main_tex(tex_files)
+    if main_tex is None:
+        return None
+
+    return {
+        "ok": True,
+        "archive_path": str(archive_path),
+        "output_dir": str(output_dir),
+        "tex_path": str(main_tex),
+        "tex_files": [str(path) for path in tex_files],
+    }
+
+
 def _download_source(arxiv_id: str, output_dir: Path) -> Dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     url = f"{ARXIV_SOURCE}/{arxiv_id}"
     archive_path = output_dir / f"{arxiv_id}.tar.gz"
+
+    cached = _existing_source_payload(output_dir, archive_path)
+    if cached is not None:
+        return cached
 
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     data = _read_with_retries(req, timeout_sec=SOURCE_TIMEOUT_SEC)
@@ -200,7 +225,6 @@ def _download_source(arxiv_id: str, output_dir: Path) -> Dict[str, object]:
         "tex_path": str(main_tex) if main_tex else "",
         "tex_files": [str(path) for path in tex_files],
     }
-
 
 @mcp.tool(name="search")
 def search(

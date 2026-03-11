@@ -10,8 +10,11 @@
   - [x] Remove deprecated root wrappers and Windows-first launchers.
   - [x] Rewrite README and add detailed usage documentation.
   - [x] Run final verification and capture the results here.
-- Current Progress: Release-hardening work is complete and verified.
+- Current Progress: Release-hardening work is complete and verified; MinerU TLS fallback hardening and public config cleanup were completed on 2026-03-11.
 - Verification Log:
+  - 2026-03-11: `python -m pytest -q tests/test_core_mineru_pdf_characterization.py` -> 9 passed after handling URLError-wrapped MinerU TLS EOF failures with curl fallback.
+  - 2026-03-11: `python -m pytest -q tests/test_orchestrator_single_pass_characterization.py tests/test_orchestrator_seen_behavior_characterization.py` -> 8 passed after MinerU transport hardening.
+  - 2026-03-11: `python -m pytest -q` -> 67 passed after MinerU transport hardening and config/doc cleanup.
   - 2026-03-10: `python -m pytest -q tests/test_orchestrator_cli_characterization.py tests/test_wrapper_smoke.py` -> pass after entrypoint changes.
   - 2026-03-10: `python -m airesearch --help` -> pass after adding `airesearch.__main__`.
   - 2026-03-10: `python -m pip install -e .` -> pass after rewriting `README.md` as UTF-8.
@@ -19,6 +22,8 @@
   - 2026-03-10: installed console script verification via Python scripts directory fallback -> pass.
   - 2026-03-10: `python -c "from pathlib import Path; Path('README.md').read_text(encoding='utf-8')"` -> pass.
 - Remaining Risks:
+  - MinerU still depends on external network reachability; non-TLS transport failures can still exhaust retries and trigger LaTeX fallback.
+  - Older `config.local.yaml` files copied from pre-cleanup templates may still include deprecated keys and continue to emit startup warnings until manually removed.
   - Local permission-locked temp directories such as `.tmp/`, `.codex_runtime/`, and `tests/_tmp_runtime/` may require manual OS-level cleanup even though they are ignored.
   - Public docs assume users will provide their own credentials and optional MCP email backend.
 
